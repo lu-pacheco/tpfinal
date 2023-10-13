@@ -1,0 +1,298 @@
+---
+title: "Instrumentos de Análisis Urbano II | Trabajo Final"
+author: "Lu Pacheco"
+output: html_document
+---
+### Sistema de bicicletas compartidas (EcoBici) en la Ciudad de Buenos Aires
+
+El objetivo de este trabajo es analizar la distribución espacial de estaciones del sistema de bicicletas compartidas de la Ciudad Autónoma de Buenos Aires (EcoBici).
+
+Para realizar los análisis correspondientes se utilizaron diversas fuentes de datos obtenidas del portal de acceso público BADATA. 
+
+1. Se cargan las librerías que serán utilizadas a lo largo del análisis
+```{r, message=FALSE}
+library(tidyverse)
+library(ggmap)
+library(lubridate)
+library(ggplot2)
+library(MoMAColors)
+library(sf)
+```
+
+2. Como el trabajo es en el ámbito de la Ciudad Autónoma de Buenos Aires, se importan y exploran los datos de comunas, barrios y estaciones de EcoBici.
+
+2. a. Comunas
+
+```{r}
+comunas <- read.csv2("data/comunas.csv",
+                         encoding = "latin1")
+```
+
+```{r}
+summary(comunas)
+```
+```{r}
+head(comunas)
+```
+
+2. b. Barrios
+```{r}
+barrios <- read.csv2("data/barrios.csv",
+                         encoding = "UTF-8")
+```
+
+```{r}
+summary(barrios)
+```
+
+```{r}
+head(barrios)
+```
+
+Por el momento, no se filtran ni transforman las bases hasta tener mas en claro qué informacion va a ser necesaria para el análisis.
+
+2. c. Estaciones EcoBici
+
+```{r}
+estaciones_ecobici <- read.csv2("data/nuevas-estaciones-bicicletas-publicas.csv",
+                         encoding = "UTF-8")
+```
+
+```{r}
+summary(estaciones_ecobici)
+```
+
+```{r}
+head(estaciones_ecobici)
+```
+
+3.Ya con esta información, se empiezan a hacer algunos analisis. El primer punto es ver cómo es la distribucion de estaciones de EcoBici por barrio y por comuna.
+
+3.a Como los datasets estan un poco desordenados, se arma un dataset ordenado que resulte cómodo para trabajar. Este dataset debe incluir el número de cada estación de ecobici, sus coordenadas de ubicación y el barrio y comuna en la cual se encuentra. 
+
+Como hay tres columnas y queda del todo claro aun cual es la columna cuyo ID utiliza el contador de viajes, por ahora voy se desprende la dirección, emplazamiento y anclajes. 
+
+```{r}
+estaciones_ecobici <- estaciones_ecobici %>% 
+  select(-"DIRECCION", -"EMPLAZAMIENTO", -"ANCLAJES")
+```
+
+Se genera un nuevo dataset con la cantidad de estaciones por barrio.
+```{r}
+estaciones_barrio <- estaciones_ecobici %>%
+  group_by(BARRIO) %>%
+  summarise(cantidad = n())
+```
+
+```{r}
+summary(estaciones_barrio)
+```
+```{r}
+head(estaciones_barrio)
+```
+
+Hay algo extraño porque hay 51 observaciones y se sabe que hay 48 barrios. Al revisar, se ve que Villa Uurquiza, Villa Devoto y Velez Sarsfield estan repetidos, probablemente por problemas de escritura. Se procede a corregir el dataset.
+
+Primero se verifica si es un tema de espaciado al final
+
+```{r}
+estaciones_barrio <- estaciones_barrio %>%
+  mutate(BARRIO = str_trim(BARRIO , side = "right"))
+```
+
+Luego se unifican los nombres
+
+```{r}
+estaciones_barrio <- estaciones_barrio %>%
+  mutate(BARRIO = ifelse(BARRIO == "VELEZ SARFIELD", "VELEZ SARSFIELD", BARRIO))
+```
+
+```{r}
+estaciones_barrio <- estaciones_barrio %>%
+  mutate(BARRIO = ifelse(BARRIO == "DEVOTO", "VILLA DEVOTO", BARRIO))
+```
+
+Se vuelve a agrupar por barrio
+
+```{r}
+estaciones_barrio <- estaciones_barrio %>%
+  group_by(BARRIO) %>%
+  summarize(estaciones = sum(cantidad))
+```
+
+Continua habiendo 47 observaciones, es decir que continua faltando un barrio. A partir del dataset de barrios, se incorpora el barrio faltante y además, la comuna correspondiente
+
+```{r}
+estaciones_barrio <- full_join(estaciones_barrio, barrios[c("BARRIO", "COMUNA")], by = "BARRIO")
+```
+
+Nuevamente hay un barrio duplicado, se unifican los nombres y se corrije la manera en la que están escritas las comunas
+
+```{r}
+estaciones_barrio <- estaciones_barrio %>%
+  mutate(COMUNA = str_remove(COMUNA, "\\..*"))
+```
+
+```{r}
+estaciones_barrio <- estaciones_barrio %>%
+  mutate(BARRIO = ifelse(BARRIO == "VILLA GRAL. MITRE", "VILLA GENERAL MITRE", BARRIO))
+```
+
+Se unifica la observación duplicada
+```{r}
+estaciones_barrio_filtrado <- estaciones_barrio %>%
+  filter(BARRIO == "VILLA GENERAL MITRE")
+```
+
+```{r}
+estaciones_barrio_filtrado <- estaciones_barrio_filtrado %>%
+  summarize(
+    BARRIO = unique(BARRIO),
+    estaciones = paste(estaciones, collapse = ", "),
+    COMUNA = paste(COMUNA, collapse = ", "))
+```
+
+```{r}
+estaciones_barrio_filtrado <- estaciones_barrio_filtrado %>%
+  mutate(estaciones = sub(",.*$", "", estaciones)) %>% 
+  mutate(COMUNA = sub("^[^,]*,", "", COMUNA))
+```
+
+```{r}
+estaciones_barrio <- estaciones_barrio %>%
+  filter(BARRIO != "VILLA GENERAL MITRE")
+```
+
+```{r}
+head(estaciones_barrio_filtrado)
+```
+```{r}
+head(estaciones_barrio)
+```
+
+```{r}
+estaciones_barrio_filtrado <- estaciones_barrio_filtrado %>%
+  mutate(estaciones = as.integer(estaciones))
+```
+
+```{r}
+estaciones_barrio <- bind_rows(estaciones_barrio, estaciones_barrio_filtrado)
+```
+
+```{r}
+estaciones_barrio<- estaciones_barrio %>%
+  mutate(estaciones = ifelse(is.na(estaciones), 0, estaciones))
+```
+
+3. b. Finalmente se logra tener el data set transformado. Ahora se procede a visualizar la información para entender cómo se distribuyen las estaciones de EcoBici en la Ciudad de Buenos Aires. 
+
+3. b. 1.
+
+Primero se ve en un gráfico de barras cómo se ordenan las comunas según cantidad de estaciones de bicicleta. Se ve que la Comuna 1, la Comuna 14 y la Comuna 13 (Comunas que coinciden con los corredores centro y norte de la ciudad) son las que más estaciones contienen. 
+
+```{r}
+ggplot() +
+  geom_bar(
+    data = estaciones_barrio %>%
+      group_by(COMUNA) %>%
+      summarise(estaciones = sum(estaciones)) %>%
+      arrange(desc(estaciones)),
+    aes(x = reorder(COMUNA, -estaciones), y = estaciones),
+    fill = "#EA638C",
+    stat = "identity"
+  ) +
+  labs(
+    title = "Cantidad de estaciones de Ecobici por Comuna",
+    x = "Comuna",
+    y = "Cantidad"
+  ) +
+  theme_minimal()
+```
+Para poder afinar un poco la observación, se realiza un gráfico similar, pero con los diez barrios que mayor cantidad de estaciones tienen. A cada barrio se le asigna un color según la Comuna a la que pertenece. Palermo (Comuna 14), Belgrano (Comuna 13) y San Nicolás (Comuna 1). Esto refuerza la observaciónd de que las estaciones de EcoBici se ubican en los corredores norte y centro. 
+
+```{r}
+ggplot(data = estaciones_barrio %>%
+              top_n(10, estaciones), 
+       aes(x = reorder(BARRIO, -estaciones), y = estaciones, fill = COMUNA)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Cantidad de estaciones de Ecobici por Barrio - Top 10",
+    x = "Barrio",
+    y = "Cantidad"
+  ) +
+  scale_fill_discrete() +  
+  theme_minimal()+
+  theme(axis.text.x = element_text(size = 4))
+```
+Para completar el análisis, resulta más útil ver esta información en el territorio. Así que se realiza un mapa que muestre la ubicación de los barrios, las comunas y las estaciones de Ecobici. 
+
+```{r}
+barrios_caba <- st_read("data/barrios_caba/barrios_caba/barrios_caba.shp",
+ stringsAsFactors = TRUE,
+options = "ENCODING=latin1")
+```
+
+```{r}
+comunas_caba <- st_read("data/comunas_caba/comunas_wgs84.shp",
+ stringsAsFactors = TRUE,
+options = "ENCODING=latin1")
+```
+```{r}
+ggplot() +
+  geom_sf(data = barrios_caba, color = "#89023E", fill = alpha("#89023E", 0.35)) +
+  geom_point(data = estaciones_ecobici, aes(x = Lon, y = Lat), color = "#FFD9DA", size = 3) +
+  geom_sf(data = barrios_caba, color = "#89023E", fill = "transparent")  +
+  geom_sf(data = comunas_caba, color = "#EA638C", fill = "transparent") +
+
+  
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+Ahora sí puede observarse mucho más claramente la distribución de estaciones de EcoBici en las comunas y barrios de los corredores norte y centro como se había inferido. Para complementar, se realiza un mapa coropletico. Es necesario transformar los datasets utilizados hasta el momento para visualizarlo
+
+```{r}
+barrios_caba <- barrios_caba %>%
+  rename(BARRIO = barrio)
+```
+
+```{r}
+barrios_caba <- barrios_caba %>%
+  mutate(BARRIO = case_when(
+    BARRIO == "VILLA GRAL. MITRE" ~ "VILLA GENERAL MITRE",
+    TRUE ~ BARRIO))
+```
+
+```{r}
+estaciones_barrio <- left_join(estaciones_barrio, barrios_caba, by = "BARRIO")
+```
+
+```{r}
+ggplot(data = estaciones_barrio, aes(fill = estaciones, geometry = geometry)) +
+  geom_sf() +
+  scale_fill_viridis_c() + 
+  labs(title = "Mapa Coroplético de Estaciones de Ecobici",
+       subtitle = "Estaciones por barrio",
+       fill = "Estaciones") +
+  theme_minimal()
+```
+Y ahora vamos a ver un mapa de calor
+
+```{r}
+caba_bbox <- make_bbox(estaciones_ecobici$Lon, estaciones_ecobici$Lat)
+```
+
+```{r}
+mapa_base <- get_stamenmap(bbox = caba_bbox,
+ maptype = "toner-lite",
+zoom = 12)
+```
+
+```{r}
+ggmap(mapa_base) +
+ stat_density2d(data = estaciones_ecobici, 
+ aes(x = Lon, y = Lat, fill = after_stat(level)), geom = "polygon", alpha=0.5, breaks = c(0, 10, 25, 50, 75, 100, 150))+
+ scale_fill_distiller(palette = "Spectral")+
+ labs(title="Densidad de estaciones EcoBici")
+```
+
+
