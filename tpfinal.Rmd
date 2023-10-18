@@ -295,4 +295,7 @@ ggmap(mapa_base) +
  labs(title="Densidad de estaciones EcoBici")
 ```
 
+En conclusión, el análisis revela una clara concentración de estaciones de Ecobici en los corredores central y norte de la ciudad de Buenos Aires. Esta tendencia parece estar relacionada con la preferencia histórica de la ciudad por invertir en infraestructura y servicios en estas áreas. Sin embargo, sería enriquecedor ampliar la evaluación para examinar la ubicación de la red de ciclovías y su correlación con este patrón, así como la interacción con la red de subte, lo que permitiría comprender mejor el potencial de intermodalidad.
+
+En resumen, el sistema de Ecobici, al igual que otras inversiones urbanas, se concentra principalmente en los corredores del norte y centro, perpetuando desequilibrios existentes en la ciudad. La información y análisis resultantes de este estudio podrían servir como base para repensar el sistema de Ecobici y la red de ciclovías, con el objetivo de reducir la brecha en accesibilidad al transporte público y movilidad entre las áreas del norte y el sur de la ciudad. Esta reflexión es esencial para promover una distribución más equitativa de los recursos y servicios urbanos, fomentando la movilidad sostenible y accesible para todos los habitantes de Buenos Aires.
 
